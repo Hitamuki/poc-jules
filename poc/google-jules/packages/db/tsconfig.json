@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "module": "commonjs"
+    // Prisma Client のパスエイリアスは、prisma generate時に自動解決されるため、通常は不要
+    // "paths": {
+    //    "@prisma/client": ["../../node_modules/.pnpm/@prisma+client@5.14.0_prisma@5.14.0/node_modules/@prisma/client"]
+    // }
+  },
+  "include": ["src/**/*.ts", "prisma/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

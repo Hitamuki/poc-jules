@@ -1,0 +1,217 @@
+// poc/google-jules/packages/db/prisma/schema.prisma
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma" // Prisma-level relation management
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"] // For potential performance improvements
+}
+
+generator erd {
+  provider = "prisma-erd-generator"
+  output   = "./ERD.svg" // Output path for the ERD
+  theme    = "neutral"   // Theme for the ERD
+  // Available themes: simple, neutral, forest, dark, neutralRk, magazine
+  // See https://github.com/keonik/prisma-erd-generator for more options
+}
+
+// Enum definitions based on requirements
+enum Status {
+  UNDEFINED // 未定
+  NOT_STARTED // 未着手
+  IN_PROGRESS // 進行中
+  ON_HOLD // 保留
+  COMPLETED // 完了
+  ARCHIVED // アーカイブ
+  DELETED // 削除 (論理削除用)
+}
+
+enum Priority {
+  HIGH
+  MEDIUM
+  LOW
+  NONE // 優先度なしも考慮
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum ProfileType {
+  PRIVATE
+  BUSINESS
+  LEARNING
+  CUSTOM // その他カスタム
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String // Password hash
+  username  String?  @unique // Optional username
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profiles Profile[]
+  // preferences NotificationSetting? // Or direct relation if one-to-one is strict
+}
+
+model Profile {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String // e.g., "Personal", "Work"
+  type        ProfileType @default(PRIVATE)
+  description String?
+  isActive    Boolean     @default(false) // Indicates if this is the currently active profile for the user
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  folders    Folder[]
+  bookmarks  Bookmark[] // Bookmarks directly under this profile (not in a folder)
+  categories Category[]
+  tags       Tag[]
+
+  @@unique([userId, name]) // User can't have two profiles with the same name
+  @@index([userId])
+}
+
+model Folder {
+  id          String  @id @default(cuid())
+  profileId   String
+  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Folder? @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Folder[] @relation("FolderHierarchy")
+
+  name        String
+  description String? // Folder can also have notes
+  order       Int?    // For custom ordering within the same level
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookmarks Bookmark[]
+
+  @@index([profileId])
+  @@index([parentId])
+}
+
+model Bookmark {
+  id          String   @id @default(cuid())
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: NoAction) // Avoid cascade if bookmark might be moved
+  folderId    String?
+  folder      Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull) // If folder is deleted, bookmark is not deleted
+
+  name        String
+  url         String   @db.Text // URLs can be long
+  memo        String?  @db.Text
+  status      Status   @default(NOT_STARTED)
+  priority    Priority @default(NONE)
+  isFavorite  Boolean  @default(false)
+
+  scheduledAt DateTime? // Start date/time for scheduled items
+  deadlineAt  DateTime? // End date/time
+  reminderAt  DateTime? // Single reminder, or use a separate Reminder model for multiple
+
+  viewedAt    DateTime? // Last viewed timestamp for "閲覧モード"
+  archivedAt  DateTime?
+  deletedAt   DateTime? // For soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tags       BookmarkTag[]
+  categories BookmarkCategory[]
+  // If a bookmark can only belong to one category, then:
+  // categoryId String?
+  // category   Category? @relation(fields: [categoryId], references: [id])
+
+
+  @@index([profileId])
+  @@index([folderId])
+  @@index([status])
+  @@index([priority])
+  @@index([deletedAt]) // For querying non-deleted items
+}
+
+model Category {
+  id        String  @id @default(cuid())
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name      String
+  color     String? // e.g., hex code for UI display
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookmarks BookmarkCategory[]
+
+  @@unique([profileId, name])
+  @@index([profileId])
+}
+
+model Tag {
+  id        String  @id @default(cuid())
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookmarks BookmarkTag[]
+
+  @@unique([profileId, name])
+  @@index([profileId])
+}
+
+// Many-to-many relation between Bookmark and Tag
+model BookmarkTag {
+  bookmarkId String
+  bookmark   Bookmark @relation(fields: [bookmarkId], references: [id], onDelete: Cascade)
+  tagId      String
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([bookmarkId, tagId])
+  @@index([bookmarkId])
+  @@index([tagId])
+}
+
+// Many-to-many relation between Bookmark and Category
+model BookmarkCategory {
+  bookmarkId String
+  bookmark   Bookmark @relation(fields: [bookmarkId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([bookmarkId, categoryId])
+  @@index([bookmarkId])
+  @@index([categoryId])
+}
+
+// Could be extended for more complex scheduling/reminders
+// For now, basic schedule/reminder info is directly on Bookmark model.
+// If more complex reminders (e.g., recurring, multiple reminders per item) are needed,
+// a separate Schedule/Reminder model would be better.
+// model Reminder {
+//   id String @id @default(cuid())
+//   bookmarkId String
+//   bookmark Bookmark @relation(fields: [bookmarkId], references: [id])
+//   remindAt DateTime
+//   message String?
+//   isDismissed Boolean @default(false)
+//   createdAt DateTime @default(now())
+// }

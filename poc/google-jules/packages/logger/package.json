@@ -1,0 +1,24 @@
+{
+  "name": "@bookmark-todo-app/logger",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "biome lint .",
+    "format": "biome format . --write"
+  },
+  "dependencies": {
+    "winston": "^3.13.0",
+    "winston-mongodb": "^5.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "files": ["dist"]
+}

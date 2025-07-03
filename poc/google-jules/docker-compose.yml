@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  postgresdb:
+    image: postgres:15 # Specify PostgreSQL version
+    container_name: bookmark_todo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user} # Default 'user' if not set in .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password} # Default 'password'
+      POSTGRES_DB: ${POSTGRES_DB:-bookmark_todo_db} # Default 'bookmark_todo_db'
+      # PGDATA: /var/lib/postgresql/data/pgdata # Optional: if you want to specify data directory inside container
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432" # Expose PostgreSQL on host port (default 5432)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist data in a Docker volume
+      # Optional: Mount init scripts for custom database initialization
+      # - ./docker-init/postgres/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+      # - ./docker-init/postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      # - ./docker-init/postgres/data.sql:/docker-entrypoint-initdb.d/02-data.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-user} -d $${POSTGRES_DB:-bookmark_todo_db} -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # Time to wait before first health check
+
+  mongodb:
+    image: mongo:6 # Specify MongoDB version
+    container_name: bookmark_todo_mongo
+    restart: unless-stopped
+    environment:
+      # If you want to create a specific user and database for the logging application:
+      # MONGO_INITDB_DATABASE: ${MONGO_APP_LOG_DB_NAME:-applogs}
+      # MONGO_APP_LOG_USER: ${MONGO_APP_LOG_USER:-loguser}
+      # MONGO_APP_LOG_PASSWORD: ${MONGO_APP_LOG_PASSWORD:-logpassword}
+      # If using these, the MONGO_LOG_URI in .env should match these credentials.
+      # For simplicity, Winston can often connect using root credentials if provided,
+      # or without auth if MongoDB is configured that way (not recommended for production).
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-mongoadmin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-secret}
+    ports:
+      - "${MONGO_PORT:-27017}:27017" # Expose MongoDB on host port (default 27017)
+    volumes:
+      - mongo_data:/data/db # Persist data in a Docker volume
+      # Optional: Mount init scripts for MongoDB (e.g., to create users, indexes)
+      # - ./docker-init/mongo/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      # The test command for mongosh needs to be adjusted based on MongoDB version and auth setup.
+      # This is a basic ping. For MongoDB 6+, `db.hello().isWritablePrimary` or similar might be better.
+      # Ensure `mongosh` is available in the mongo:6 image or use `mongo` for older versions.
+      test: echo 'db.runCommand("ping").ok' | mongosh --norc --quiet --username $${MONGO_ROOT_USER:-mongoadmin} --password $${MONGO_ROOT_PASSWORD:-secret} --authenticationDatabase admin
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s # Time to wait before first health check
+
+volumes:
+  postgres_data:
+    driver: local # Define a Docker volume for PostgreSQL data persistence
+  mongo_data:
+    driver: local # Define a Docker volume for MongoDB data persistence
+
+# Optional: Define a custom network for inter-service communication if needed.
+# networks:
+#   app_network:
+#     driver: bridge
+
+# If using a custom network, add this to each service:
+# services:
+#   postgresdb:
+#     networks:
+#       - app_network
+#   mongodb:
+#     networks:
+#       - app_network
+#
+# If your API application itself runs in Docker (not covered in this setup),
+# it would also join this network and could use service names (postgresdb, mongodb) for connections.
+# Since the API (apps/api) is planned to run directly on the host for now (via pnpm start:dev),
+# it will connect to the databases via localhost:${POSTGRES_PORT} and localhost:${MONGO_PORT}.
+```
